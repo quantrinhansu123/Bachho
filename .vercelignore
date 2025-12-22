@@ -1,0 +1,12 @@
+node_modules
+.firebase
+firebase.json
+.firebaserc
+FIREBASE_SETUP.md
+firebase-database-structure.json
+firebase-import-helper.html
+scripts
+*.log
+.env.local
+.env.*.local
+
