@@ -3,10 +3,11 @@ import { TimesheetGrid } from './components/TimesheetGrid';
 import { Login } from './components/Login';
 import { HRManagement } from './components/HRManagement';
 import { TargetManagement } from './components/TargetManagement';
+import { Settings } from './components/Settings';
+import { ImageCapture } from './components/ImageCapture';
 import { INITIAL_EMPLOYEES, INITIAL_TARGETS, generateMockAttendance } from './constants';
 import { Employee, Target } from './types';
-import { Calendar, Users, FileDown, BrainCircuit, AlertCircle, LogOut, LayoutDashboard, Shield, MapPin } from 'lucide-react';
-import { analyzeTimesheet, autoFillData } from './services/geminiService';
+import { Calendar, Users, FileDown, AlertCircle, LogOut, LayoutDashboard, Shield, MapPin, Settings as SettingsIcon, Camera } from 'lucide-react';
 
 const App: React.FC = () => {
   // Authentication State
@@ -27,15 +28,16 @@ const App: React.FC = () => {
   
   const [targets, setTargets] = useState<Target[]>(INITIAL_TARGETS);
   
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<{topPerformer?: string, absenteeismAlert?: string, summary?: string} | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showImageCapture, setShowImageCapture] = useState(false);
 
   // Initialize Data
   useEffect(() => {
-    // Check if API key is set, otherwise show a polite warning or degradation
-    if (!process.env.API_KEY) {
-        console.warn("API Key is missing. AI features will not work.");
+    // Load API key from localStorage and set to window global
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      (window as any).__GEMINI_API_KEY__ = savedKey;
     }
   }, []);
 
@@ -57,45 +59,43 @@ const App: React.FC = () => {
       setCurrentUser(null);
   };
 
-  const handleAnalyze = async () => {
-    if (!process.env.API_KEY) {
-        alert("Vui lòng cấu hình API Key để sử dụng tính năng AI.");
-        return;
-    }
 
-    setIsAnalyzing(true);
-    setErrorMsg(null);
-    try {
-        const result = await analyzeTimesheet(gridData, month, year);
-        setAnalysisResult(result);
-    } catch (e) {
-        setErrorMsg("Không thể phân tích dữ liệu. Vui lòng thử lại.");
-    } finally {
-        setIsAnalyzing(false);
-    }
-  };
 
-  const handleSmartFill = async () => {
-     if (!process.env.API_KEY) {
-        alert("Vui lòng cấu hình API Key.");
-        return;
-    }
-    setIsAnalyzing(true);
-    try {
-        const newEmps = await autoFillData(3, month, year);
-        // Ensure new employees have default passwords
-        const newEmpsWithPass = newEmps.map(e => ({...e, password: '123', role: 'staff' as const}));
-        
-        // Add to grid
-        setGridData(prev => [...prev, ...newEmpsWithPass]);
-        // Also add to master list if they don't exist (simplified logic)
-        setAllEmployees(prev => [...prev, ...newEmpsWithPass]);
+  const handleImageDataExtracted = (extractedEmployees: Employee[]) => {
+    // Merge with existing data - update if exists, add if new
+    const updatedGridData = [...gridData];
+    const updatedAllEmployees = [...allEmployees];
 
-    } catch (e) {
-        setErrorMsg("Lỗi tạo dữ liệu.");
-    } finally {
-        setIsAnalyzing(false);
-    }
+    extractedEmployees.forEach(extracted => {
+      // Check if employee exists in grid
+      const existingInGrid = updatedGridData.findIndex(e => e.code === extracted.code);
+      if (existingInGrid >= 0) {
+        // Update existing employee in grid with new attendance data
+        updatedGridData[existingInGrid] = {
+          ...updatedGridData[existingInGrid],
+          attendance: { ...updatedGridData[existingInGrid].attendance, ...extracted.attendance }
+        };
+      } else {
+        // Add new employee to grid
+        updatedGridData.push(extracted);
+      }
+
+      // Check if employee exists in master list
+      const existingInMaster = updatedAllEmployees.findIndex(e => e.code === extracted.code);
+      if (existingInMaster >= 0) {
+        // Update existing employee in master list
+        updatedAllEmployees[existingInMaster] = {
+          ...updatedAllEmployees[existingInMaster],
+          ...extracted
+        };
+      } else {
+        // Add new employee to master list
+        updatedAllEmployees.push(extracted);
+      }
+    });
+
+    setGridData(updatedGridData);
+    setAllEmployees(updatedAllEmployees);
   };
 
   const handleUpdateEmployee = (updatedEmp: Employee) => {
@@ -103,6 +103,13 @@ const App: React.FC = () => {
       setAllEmployees(prev => prev.map(e => e.id === updatedEmp.id ? updatedEmp : e));
       // Update grid data if they are present there
       setGridData(prev => prev.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+  };
+
+  const handleDeleteEmployee = (empId: string) => {
+      // Remove from master list
+      setAllEmployees(prev => prev.filter(e => e.id !== empId));
+      // Remove from grid data
+      setGridData(prev => prev.filter(e => e.id !== empId));
   };
 
   const handleUpdateTargets = (newTargets: Target[]) => {
@@ -189,6 +196,14 @@ const App: React.FC = () => {
                 )}
                 
                 <button 
+                   onClick={() => setShowSettings(true)}
+                   className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded shadow transition text-sm font-medium"
+                   title="Cài đặt"
+                >
+                   <SettingsIcon size={16} />
+                </button>
+                
+                <button 
                    onClick={handleLogout}
                    className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 px-3 py-2 rounded shadow transition text-sm font-medium border border-red-500"
                    title="Đăng xuất"
@@ -207,11 +222,11 @@ const App: React.FC = () => {
                 {/* Actions Bar for Timesheet */}
                 <div className="flex justify-end mb-4 space-x-2">
                     <button 
-                        onClick={handleSmartFill}
-                        className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 px-4 py-2 rounded shadow transition text-sm font-medium text-white"
+                        onClick={() => setShowImageCapture(true)}
+                        className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded shadow transition text-sm font-medium text-white"
                     >
-                        <BrainCircuit size={16} />
-                        <span>Tạo mẫu (AI)</span>
+                        <Camera size={16} />
+                        <span>Chụp Ảnh & Nhập Dữ Liệu</span>
                     </button>
                     <button className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded shadow transition text-sm font-medium text-white">
                         <FileDown size={16} />
@@ -219,35 +234,22 @@ const App: React.FC = () => {
                     </button>
                 </div>
 
-                {/* Analysis Card */}
-                {analysisResult && (
-                    <div className="mb-4 bg-white border-l-4 border-purple-500 p-4 rounded shadow-sm flex flex-col md:flex-row gap-4 animate-fade-in">
-                        <div className="flex-1">
-                            <h3 className="font-bold text-purple-700 flex items-center mb-2">
-                                <BrainCircuit size={18} className="mr-2"/> Tổng quan AI
-                            </h3>
-                            <p className="text-gray-700 text-sm">{analysisResult.summary}</p>
-                        </div>
-                        <div className="flex flex-col gap-2 text-sm border-l pl-4 border-gray-100">
-                            <div className="flex items-center text-green-700">
-                                <span className="font-bold mr-2">🏆 Chăm chỉ nhất:</span> {analysisResult.topPerformer}
-                            </div>
-                            <div className="flex items-center text-red-600">
-                                <span className="font-bold mr-2">⚠️ Cần lưu ý:</span> {analysisResult.absenteeismAlert}
-                            </div>
-                        </div>
-                        <button 
-                            onClick={() => setAnalysisResult(null)}
-                            className="self-start text-gray-400 hover:text-gray-600"
-                        >
-                            &times;
-                        </button>
-                    </div>
-                )}
-
                 {errorMsg && (
-                    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded flex items-center">
-                        <AlertCircle size={18} className="mr-2"/> {errorMsg}
+                    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded">
+                        <div className="flex items-center mb-2">
+                            <AlertCircle size={18} className="mr-2"/> 
+                            <span className="font-semibold">Lỗi xử lý</span>
+                        </div>
+                        <div className="text-sm">{errorMsg}</div>
+                        {errorMsg.includes('quota') && (
+                            <div className="mt-2 text-xs text-red-500">
+                                💡 Bạn có thể kiểm tra quota tại{' '}
+                                <a href="https://ai.dev/usage?tab=rate-limit" target="_blank" rel="noopener noreferrer" className="underline">
+                                    đây
+                                </a>
+                                {' '}hoặc đợi một lúc rồi thử lại.
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -259,8 +261,6 @@ const App: React.FC = () => {
                     targets={targets}
                     allEmployees={allEmployees} // Pass the Master List here
                     onDataChange={handleGridChange}
-                    onAnalyze={handleAnalyze}
-                    isAnalyzing={isAnalyzing}
                 />
             </>
         ) : currentView === 'targets' ? (
@@ -272,7 +272,12 @@ const App: React.FC = () => {
         ) : (
             <HRManagement 
                 employees={allEmployees} // Manage Master List
-                onUpdateEmployee={handleUpdateEmployee} 
+                gridData={gridData}
+                year={year}
+                month={month}
+                currentUser={currentUser}
+                onUpdateEmployee={handleUpdateEmployee}
+                onDeleteEmployee={handleDeleteEmployee}
             />
         )}
         
@@ -281,6 +286,22 @@ const App: React.FC = () => {
             <p>Phiên bản 1.2.1 - Bạch Hổ Security</p>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      <Settings 
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
+
+      {/* Image Capture Modal */}
+      {currentView === 'timesheet' && (
+        <ImageCapture
+          isOpen={showImageCapture}
+          onClose={() => setShowImageCapture(false)}
+          onDataExtracted={handleImageDataExtracted}
+          existingEmployees={allEmployees}
+        />
+      )}
     </div>
   );
 };

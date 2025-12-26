@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { Employee, DayInfo, Target } from '../types';
 import { DAYS_OF_WEEK_EN } from '../constants';
-import { Plus, Trash2, Wand2, Copy, AlignCenterHorizontal, ChevronDown, CheckSquare, Square } from 'lucide-react';
+import { Plus, Trash2, Copy, AlignCenterHorizontal, ChevronDown, CheckSquare, Square } from 'lucide-react';
 
 interface TimesheetGridProps {
   year: number;
@@ -10,8 +10,6 @@ interface TimesheetGridProps {
   targets: Target[]; // Passed from App
   allEmployees: Employee[]; // Full list to look up details
   onDataChange: (newData: Employee[]) => void;
-  onAnalyze: () => void;
-  isAnalyzing: boolean;
 }
 
 interface Selection {
@@ -27,9 +25,7 @@ export const TimesheetGrid: React.FC<TimesheetGridProps> = ({
   data,
   targets,
   allEmployees,
-  onDataChange,
-  onAnalyze,
-  isAnalyzing
+  onDataChange
 }) => {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [showTargetDropdown, setShowTargetDropdown] = useState(false);
@@ -461,6 +457,54 @@ export const TimesheetGrid: React.FC<TimesheetGridProps> = ({
       onDataChange(data.filter(e => e.id !== id));
   };
 
+  // Sort data by Target order
+  const sortedData = useMemo(() => {
+    // Create a map: employeeCode -> { targetIndex, rosterIndex }
+    // We use code because it's consistent even when new rows are added
+    const employeeTargetMap = new Map<string, { targetIndex: number; rosterIndex: number }>();
+    
+    targets.forEach((target, targetIndex) => {
+      target.roster.forEach((rosterItem, rosterIndex) => {
+        // Find employee by ID in allEmployees to get their code
+        const emp = allEmployees.find(e => e.id === rosterItem.employeeId);
+        if (emp && emp.code) {
+          employeeTargetMap.set(emp.code, {
+            targetIndex,
+            rosterIndex
+          });
+        }
+      });
+    });
+
+    // Sort data
+    const sorted = [...data].sort((a, b) => {
+      // Get target info for each employee by their code
+      const targetInfoA = a.code ? employeeTargetMap.get(a.code) : undefined;
+      const targetInfoB = b.code ? employeeTargetMap.get(b.code) : undefined;
+
+      // Both employees are in targets
+      if (targetInfoA && targetInfoB) {
+        // Different targets - sort by target order
+        if (targetInfoA.targetIndex !== targetInfoB.targetIndex) {
+          return targetInfoA.targetIndex - targetInfoB.targetIndex;
+        }
+        // Same target - sort by roster order
+        return targetInfoA.rosterIndex - targetInfoB.rosterIndex;
+      }
+
+      // Only A is in a target
+      if (targetInfoA) return -1;
+      
+      // Only B is in a target
+      if (targetInfoB) return 1;
+      
+      // Neither is in a target - sort by name alphabetically
+      return (a.name || '').localeCompare(b.name || '', 'vi');
+    });
+
+    return sorted;
+  }, [data, targets, allEmployees]);
+
   // Sticky Positioning Constants
   const COL_WIDTHS = {
       CHECK: 40,
@@ -537,15 +581,6 @@ export const TimesheetGrid: React.FC<TimesheetGridProps> = ({
                     </div>
                 )}
             </div>
-
-            <button
-                onClick={onAnalyze}
-                disabled={isAnalyzing}
-                className="flex items-center px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
-            >
-                <Wand2 size={16} className={`mr-1 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                {isAnalyzing ? 'Đang xử lý...' : 'AI Phân Tích'}
-            </button>
         </div>
       </div>
 
@@ -602,7 +637,7 @@ export const TimesheetGrid: React.FC<TimesheetGridProps> = ({
             </tr>
           </thead>
           <tbody>
-            {data.map((emp, rIdx) => {
+            {sortedData.map((emp, rIdx) => {
               const codeFieldKey = `${emp.id}-code`;
               const nameFieldKey = `${emp.id}-name`;
               const isCodeActive = autocompleteState.activeField === codeFieldKey;

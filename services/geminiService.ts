@@ -1,20 +1,57 @@
 import { GoogleGenAI } from "@google/genai";
 import { Employee } from '../types';
 
-// IMPORTANT: In a real production app, never expose keys in client code.
-// Since this is a demo environment request, we assume process.env.API_KEY is available.
+// API Key hardcoded
+const API_KEY = 'AIzaSyBQhDWtE1dZDBzMILrY3hVUSnfCjhmLTwA';
 
+// Create AI client
 const getAiClient = () => {
-    if (!process.env.API_KEY) {
-        throw new Error("API Key not found");
-    }
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    return new GoogleGenAI({ apiKey: API_KEY });
 };
 
+// Parse error response for better error messages
+const handleApiError = (error: any): never => {
+    console.error("Gemini Error:", error);
+    
+    const errorMessage = error?.message || error?.toString() || '';
+    const errorCode = error?.status || error?.code || error?.statusCode;
+    const errorData = error?.response?.data || error?.data || {};
+    
+    // Check for invalid API key error (400)
+    const isInvalidKeyError = 
+        errorCode === 400 || 
+        errorData?.error?.code === 400 ||
+        errorMessage.toLowerCase().includes('api key not valid') ||
+        errorMessage.toLowerCase().includes('invalid api key') ||
+        errorMessage.toLowerCase().includes('authentication');
+    
+    if (isInvalidKeyError) {
+        throw new Error("⚠️ API KEY KHÔNG HỢP LỆ! Vui lòng liên hệ admin.");
+    }
+    
+    // Check for quota exceeded (429)
+    const isQuotaError = 
+        errorCode === 429 || 
+        errorData?.error?.code === 429 ||
+        errorMessage.toLowerCase().includes('quota') ||
+        errorMessage.toLowerCase().includes('exceeded') ||
+        errorMessage.toLowerCase().includes('resource_exhausted') ||
+        errorData?.error?.status === 'RESOURCE_EXHAUSTED';
+    
+    if (isQuotaError) {
+        throw new Error(
+            "⚠️ ĐÃ VƯỢT QUÁ GIỚI HẠN SỬ DỤNG API!\n\n" +
+            "Vui lòng đợi một lúc rồi thử lại."
+        );
+    }
+    
+    throw new Error(errorMessage || "Lỗi khi xử lý yêu cầu. Vui lòng thử lại.");
+};
+
+// Analyze timesheet with Gemini AI
 export const analyzeTimesheet = async (employees: Employee[], month: number, year: number) => {
     const ai = getAiClient();
     
-    // Prepare a lightweight prompt payload
     const dataSummary = employees.map(e => ({
         name: e.name,
         dept: e.department,
@@ -39,19 +76,19 @@ export const analyzeTimesheet = async (employees: Employee[], month: number, yea
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: "application/json"
             }
         });
         return JSON.parse(response.text || "{}");
-    } catch (error) {
-        console.error("Gemini Error:", error);
-        throw error;
+    } catch (error: any) {
+        return handleApiError(error);
     }
 };
 
+// Generate fake employee data with Gemini AI
 export const autoFillData = async (count: number, month: number, year: number): Promise<Employee[]> => {
     const ai = getAiClient();
     const prompt = `
@@ -76,15 +113,35 @@ export const autoFillData = async (count: number, month: number, year: number): 
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: "application/json"
             }
         });
         return JSON.parse(response.text || "[]");
-    } catch (error) {
-        console.error("Gemini Generation Error:", error);
-        return [];
+    } catch (error: any) {
+        return handleApiError(error);
+    }
+};
+
+// Test API connection
+export const testApiConnection = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+        const ai = getAiClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: 'Trả lời "OK" nếu bạn nhận được tin nhắn này.',
+        });
+        
+        if (response.text) {
+            return { success: true, message: 'Kết nối API thành công!' };
+        }
+        return { success: false, message: 'API không trả về phản hồi.' };
+    } catch (error: any) {
+        return { 
+            success: false, 
+            message: error.message || 'Không thể kết nối API.' 
+        };
     }
 };

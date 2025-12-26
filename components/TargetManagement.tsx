@@ -140,13 +140,27 @@ export const TargetManagement: React.FC<TargetManagementProps> = ({ targets, emp
           {targets.map(target => (
             <div 
               key={target.id}
-              onClick={() => handleEdit(target)}
-              className={`p-4 border-b cursor-pointer hover:bg-blue-50 transition-colors ${editingTarget?.id === target.id ? 'bg-blue-100 border-l-4 border-l-blue-600' : ''}`}
+              className={`p-4 border-b hover:bg-blue-50 transition-colors flex items-center justify-between group ${editingTarget?.id === target.id ? 'bg-blue-100 border-l-4 border-l-blue-600' : ''}`}
             >
-              <div className="font-semibold text-gray-800">{target.name}</div>
-              <div className="text-xs text-gray-500 mt-1 flex items-center">
-                <Users size={12} className="mr-1" /> {target.roster.length} nhân sự
+              <div 
+                onClick={() => handleEdit(target)}
+                className="flex-1 cursor-pointer"
+              >
+                <div className="font-semibold text-gray-800">{target.name}</div>
+                <div className="text-xs text-gray-500 mt-1 flex items-center">
+                  <Users size={12} className="mr-1" /> {target.roster.length} nhân sự
+                </div>
               </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteTarget(target.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:bg-red-50 p-1.5 rounded ml-2"
+                title="Xóa mục tiêu"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
           {targets.length === 0 && (
